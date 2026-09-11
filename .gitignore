@@ -1,0 +1,13 @@
+# Local database files and generated performance reports.
+*.log
+/metrics-*.json
+
+# Build, coverage, and profiling output.
+/bin/
+*.test
+coverage.out
+/coverage/
+*.prof
+
+# macOS metadata.
+.DS_Store
