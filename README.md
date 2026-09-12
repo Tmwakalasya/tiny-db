@@ -1,15 +1,15 @@
-# tiny-kube
+# tiny-db
 
 ```text
- _   _                   _          _
-| |_(_)_ __  _   _      | | ___   _| |__   ___
-| __| | '_ \| | | |_____| |/ / | | | '_ \ / _ \
-| |_| | | | | |_| |_____|   <| |_| | |_) |  __/
- \__|_|_| |_|\__, |     |_|\_\\__,_|_.__/ \___|
+ _   _                       _   _
+| |_(_)_ __  _   _        __| | | |__
+| __| | '_ \| | | | ___  / _` | | '_ \
+| |_| | | | | |_| ||___|| (_| | | |_) |
+ \__|_|_| |_|\__, |      \__,_| |_.__/
              |___/
 ```
 
-An educational, embedded key-value database written in Go. tiny-kube combines
+An educational, embedded key-value database written in Go. tiny-db combines
 an in-memory map with an optional append-only log so storage, recovery, and
 performance tradeoffs are easy to inspect and measure.
 
