@@ -53,6 +53,7 @@ type memory struct {
 }
 
 type report struct {
+	Storage       string    `json:"storage"`
 	MeasuredAt    time.Time `json:"measured_at"`
 	GoVersion     string    `json:"go_version"`
 	Platform      string    `json:"platform"`
@@ -88,6 +89,11 @@ func run(args []string, output io.Writer) error {
 	flags.IntVar(&c.Ops, "ops", 1_000_000, "operations each for read and overwrite")
 	flags.IntVar(&c.ValueSize, "value-size", 128, "bytes per string value")
 	flags.IntVar(&c.Samples, "samples", 10_000, "separate latency samples per workload (insert/delete capped at keys)")
+	disk := flags.Bool("disk", false, "compare persistent writes with per-write, batched, and end-of-run flushes")
+	dc := diskConfig{}
+	flags.IntVar(&dc.Writes, "disk-ops", 1000, "distinct key inserts per persistent policy (requires -disk)")
+	flags.IntVar(&dc.SyncEvery, "sync-every", 100, "writes per flush in the batch comparison (requires -disk)")
+	flags.StringVar(&dc.Directory, "disk-dir", ".", "existing parent directory for temporary benchmark logs (requires -disk)")
 	jsonOutput := flags.Bool("json", false, "print a JSON report for saving or comparison")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -97,6 +103,35 @@ func run(args []string, output io.Writer) error {
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected argument %q; use -help for options", flags.Arg(0))
+	}
+	var incompatible error
+	flags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "keys", "ops", "samples":
+			if *disk {
+				incompatible = fmt.Errorf("-%s applies to memory mode; use -disk-ops for persistent writes", f.Name)
+			}
+		case "disk-ops", "sync-every", "disk-dir":
+			if !*disk {
+				incompatible = fmt.Errorf("-%s requires -disk", f.Name)
+			}
+		}
+	})
+	if incompatible != nil {
+		return incompatible
+	}
+	if *disk {
+		dc.ValueSize = c.ValueSize
+		r, err := collectDisk(dc)
+		if err != nil {
+			return err
+		}
+		if *jsonOutput {
+			encoder := json.NewEncoder(output)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(r)
+		}
+		return printDiskReport(output, r)
 	}
 	if err := c.validate(); err != nil {
 		return err
@@ -145,6 +180,7 @@ func collect(c config) (report, error) {
 		return report{}, err
 	}
 	r := report{
+		Storage:    "memory",
 		MeasuredAt: time.Now().UTC(), GoVersion: runtime.Version(),
 		Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		CPUs:     runtime.NumCPU(), GOMAXPROCS: runtime.GOMAXPROCS(0),

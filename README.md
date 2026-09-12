@@ -43,7 +43,8 @@ go run ./cmd/metrics
 ```
 
 The metrics command reports in-memory throughput, latency, allocations, and
-heap usage. See [Performance measurement](#performance-measurement) for its
+heap usage; add `-disk` to compare persistent write policies. See
+[Performance measurement](#performance-measurement) for its
 workload and limits, or follow the [learning guide](docs/learning-guide.md) for
 a step-by-step explanation of the engine.
 
@@ -193,7 +194,43 @@ go test -run '^$' -bench . -benchmem -count=3
 ```
 
 Run performance measurements without `-race`; the race detector adds overhead.
-Persistent storage measurements are a future milestone.
+
+### Compare persistent write policies
+
+```sh
+go run ./cmd/metrics -disk
+go run ./cmd/metrics -disk -disk-ops 1000 -sync-every 100 -disk-dir . -value-size 128
+go run ./cmd/metrics -disk -json > metrics-disk.json
+```
+
+Disk mode uses one worker and inserts distinct keys into three fresh log files,
+running these policies in order:
+
+| Policy | Timed flush requests |
+| --- | --- |
+| `sync-each` | `Sync` after every write. |
+| `sync-batch` | `Sync` every `-sync-every` writes and after any partial final batch. |
+| `sync-end` | One `Sync` after all writes. |
+
+Defaults are `-disk-ops 1000` writes per policy, `-sync-every 100`, and
+`-value-size 128` bytes. Every policy's final flush is inside the write timer.
+Header creation and its initial `Sync`, the extra flush from `Close`, replay,
+validation, and cleanup are outside that timer. Each policy reports throughput,
+mean time per write, timed `Sync` call count, process-wide allocation deltas,
+log bytes, replay duration, and verified key count.
+
+`-disk-dir` selects the filesystem parent for temporary scratch directories;
+it defaults to `.`. Each run removes its scratch data without changing existing
+user logs. Each file is closed and immediately reopened, then every key/value
+is checked. Replay therefore measures startup with a warm filesystem cache;
+it does not simulate cold storage or establish survival after power loss.
+
+`-keys`, `-ops`, and `-samples` are memory-only and are rejected with `-disk`.
+`-disk-ops`, `-sync-every`, and `-disk-dir` require `-disk`; `-value-size` and
+`-json` work in both modes. Batching changes flush frequency only: each `Put`
+still encodes and writes its own record, and the batch is not atomic. See the
+[flush lesson](docs/learning-guide.md#milestone-3-measure-the-cost-of-flushing)
+for the tradeoff between throughput and writes awaiting a flush.
 
 ## Development
 
@@ -210,7 +247,7 @@ choices behind them.
 
 ## Roadmap
 
-- Benchmark persistent writes and compare flush-per-write with batched flushes.
+- Available: persistent write comparisons with per-write, batched, and final flushes.
 - Index file offsets so values can live on disk.
 - Define recovery for incomplete writes and add integrity checks.
 - Compact old records to reclaim space.

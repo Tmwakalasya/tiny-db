@@ -144,8 +144,8 @@ go run ./cmd/metrics -help
 
 The JSON includes the workload settings, timestamp, Go version, platform,
 operation counts, timings, allocations, and memory figures for later comparison.
-It also retains the measurement notes. Each run starts with a fresh in-memory
-database using `New()`; this command does not measure the persistent log yet.
+It also retains the measurement notes. The default mode starts with a fresh
+in-memory database using `New()`; use `-disk` for the persistent comparison below.
 The export command creates or replaces `metrics-latest.json` on your machine;
 generated reports are not committed to the repository.
 
@@ -178,6 +178,30 @@ Insert and delete runs can be short at small key counts. The original Go
 microbenchmarks below use one shared value and a tighter loop, so their numbers
 will differ. They remain useful for comparing changes to the small API.
 
+## Milestone 3: measure the cost of flushing
+
+```sh
+go run ./cmd/metrics -disk -disk-ops 1000 -sync-every 100
+```
+
+`Write` hands record bytes to the operating system. `Sync` requests a flush to
+storage. Disk mode compares requesting that flush after each write, after a
+batch, or once at the end. Every policy includes its final flush in the timed
+work, so the comparison includes the cost of completing its flush requests.
+
+With 1,000 writes and batches of 100, batching makes 10 timed flush requests
+instead of 1,000; the final-flush policy makes one. This can spread flush cost
+over more writes. Between successful flushes, more recent writes may still be
+pending and could be lost if the machine fails. The experiment measures timing
+and successful replay, rather than simulating such a failure.
+
+This is batching of flush requests: every `Put` still writes a separate record,
+and there is no atomic batch. Setup and cleanup are outside the write timing.
+The report also reopens each fresh file immediately and verifies every value;
+that replay benefits from a warm cache. See the README's
+[persistent measurement details](../README.md#compare-persistent-write-policies)
+for all flags, timing boundaries, filesystem selection, and reported metrics.
+
 ## Run the checks and benchmarks
 
 ```sh
@@ -208,10 +232,11 @@ of a particular run rather than fixed performance guarantees.
 
 ## What we will build next
 
-1. Measure persistent writes, including the cost of flushing every write versus batches.
-2. Store file positions in the index so values can live on disk.
-3. Add a deliberate recovery policy for incomplete writes.
-4. Compact old records, then profile and improve measured bottlenecks.
+Persistent write and flush-policy measurements are now available with `-disk`.
+
+1. Store file positions in the index so values can live on disk.
+2. Add a deliberate recovery policy for incomplete writes.
+3. Compact old records, then profile and improve measured bottlenecks.
 
 We will implement these in small steps, with an explanation and a check at each
 step. The next design question: if the log stores every old value, how can we
